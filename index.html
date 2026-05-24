@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>單字殺鬼傳 - 戰國轉生</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
@@ -10,13 +12,27 @@
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     [v-cloak] { display: none; }
-    /* 強制所有行動裝置輸入框點擊時字體清晰，iOS不亂縮放 */
-    input[type="text"] { font-size: 18px !important; }
     
-    /* 核心排版：預設手機是直向一欄，寬度超過 900px（平板橫放/電腦）才啟動雙欄 */
+    /* 🛡️ CSS 防禦：禁止頁面彈性橡皮筋效果、禁止點擊縮放、防止文字自動調整大小 */
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: fixed; /* 防止行動裝置下拉網頁時產生空白頁頭 */
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation; /* 停用雙擊縮放，優化連續點擊手感 */
+    }
+
+    input[type="text"] { 
+      font-size: 16px !important; /* iOS 只要達到 16px 以上就絕對不會觸發自動放大 */
+    }
+    
+    /* 智慧排版：寬度超過 900px（平板橫放/電腦）才啟動雙欄，手機一律直向一欄滿版 */
     .game-container {
       display: flex;
       flex-direction: column;
+      height: 100%;
+      justify-content: space-between;
     }
     @media (min-width: 900px) {
       .game-container {
@@ -27,15 +43,15 @@
     }
   </style>
 </head>
-<body class="bg-slate-950 text-white selection:bg-red-500/30 scrollbar-hide overflow-x-hidden">
-  <div id="app" v-cloak>
+<body class="bg-slate-950 text-white selection:bg-red-500/30">
+  <div id="app" v-cloak class="w-full h-full">
     
-    <div v-if="gameState === 'LOADING'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-12 text-center">
+    <div v-if="gameState === 'LOADING'" class="w-full h-full bg-slate-950 flex flex-col items-center justify-center p-12 text-center">
       <p class="text-slate-500 font-black text-xs uppercase animate-pulse mb-4">正在連接異界...</p>
       <div class="w-12 h-12 border-4 border-red-600/30 border-t-red-600 rounded-full animate-spin"></div>
     </div>
 
-    <div v-if="gameState === 'START'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden text-center">
+    <div v-if="gameState === 'START'" class="w-full h-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden text-center">
       <div class="relative z-10 space-y-6 my-auto max-w-2xl">
         <h1 class="text-6xl md:text-8xl font-black italic drop-shadow-2xl tracking-tighter uppercase">單字殺鬼傳</h1>
         <div class="h-1.5 w-48 bg-red-600 mx-auto rounded-full shadow-[0_0_20px_rgba(220,38,38,0.5)]"></div>
@@ -53,7 +69,7 @@
       </div>
     </div>
 
-    <div v-if="gameState === 'LEADERBOARD'" class="min-h-screen bg-slate-950 flex flex-col items-center p-4 md:p-12 relative overflow-y-auto">
+    <div v-if="gameState === 'LEADERBOARD'" class="w-full h-full bg-slate-950 flex flex-col items-center p-4 md:p-12 relative overflow-y-auto scrollbar-hide">
       <button @click="gameState = 'START'" class="absolute top-4 left-4 flex items-center space-x-2 text-slate-400 hover:text-white font-bold text-xs bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
         <i class="ph-bold ph-arrow-left"></i> <span>返回</span>
       </button>
@@ -81,7 +97,7 @@
               <span v-else class="text-sm md:text-base font-bold text-slate-500" v-text="index + 1"></span>
             </div>
             <div class="col-span-4 flex flex-col text-left">
-              <span :class="['font-black text-base md:text-xl truncate', index === 0 ? 'text-yellow-400' : 'text-white']" v-text="player.name"></span>
+              <span :class="['font-black text-sm md:text-xl truncate', index === 0 ? 'text-yellow-400' : 'text-white']" v-text="player.name"></span>
               <span class="text-[10px] md:text-xs text-slate-400 font-bold" v-text="player.profession"></span>
             </div>
             <div class="col-span-3 text-center font-mono text-sm md:text-base font-bold text-emerald-400" v-text="formatTime(player.time)"></div>
@@ -91,11 +107,11 @@
       </div>
     </div>
 
-    <div v-if="gameState === 'SELECT_DIFFICULTY'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center">
+    <div v-if="gameState === 'SELECT_DIFFICULTY'" class="w-full h-full bg-slate-950 flex flex-col items-center justify-center p-4 text-center overflow-y-auto scrollbar-hide">
       <button @click="gameState = 'START'" class="absolute top-4 left-4 flex items-center space-x-2 text-slate-400 hover:text-white font-bold text-xs bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
         <i class="ph-bold ph-arrow-left"></i> <span>返回</span>
       </button>
-      <h2 class="text-3xl font-black mb-8 tracking-widest uppercase">選擇試煉難度</h2>
+      <h2 class="text-3xl font-black mb-8 tracking-widest uppercase mt-6">選擇試煉難度</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full max-w-4xl">
         <button v-for="(sheetName, index) in Object.keys(allVocab)" :key="sheetName" @click="initGameWords(sheetName)" :class="['group p-6 rounded-[2rem] bg-gradient-to-br border border-white/10 transition-all hover:scale-105', getDifficultyColor(index)]">
           <p class="text-2xl font-black mb-1" v-text="sheetName"></p>
@@ -104,11 +120,11 @@
       </div>
     </div>
 
-    <div v-if="gameState === 'SELECT_HERO'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center relative">
+    <div v-if="gameState === 'SELECT_HERO'" class="w-full h-full bg-slate-950 flex flex-col items-center justify-center p-4 text-center relative overflow-y-auto scrollbar-hide">
       <button @click="gameState = 'SELECT_DIFFICULTY'" class="absolute top-4 left-4 flex items-center space-x-2 text-slate-400 hover:text-white font-bold text-xs bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
         <i class="ph-bold ph-arrow-left"></i> <span>返回</span>
       </button>
-      <h2 class="text-3xl font-black mb-8 tracking-widest uppercase">選擇冒險者</h2>
+      <h2 class="text-3xl font-black mb-8 tracking-widest uppercase mt-6">選擇冒險者</h2>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
         <button v-for="[key, id] in Object.entries(IDS.hero)" :key="key" @click="handleHeroSelect(key, id)" class="group bg-slate-900 border-2 border-slate-800 hover:border-red-600 rounded-2xl overflow-hidden transition-all aspect-[3/4] relative">
           <img :src="getImgUrl(id)" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-all" :alt="key"/>
@@ -130,8 +146,8 @@
       </div>
     </div>
 
-    <div v-if="gameState === 'BATTLE'" class="min-h-screen bg-slate-950 relative flex flex-col justify-between p-4 overflow-y-auto">
-      <div class="flex justify-between items-center z-50 mb-3 max-w-4xl w-full mx-auto">
+    <div v-if="gameState === 'BATTLE'" class="w-full h-full bg-slate-950 relative flex flex-col justify-between p-4 overflow-hidden select-none">
+      <div class="flex justify-between items-center z-50 mb-2 max-w-4xl w-full mx-auto flex-shrink-0">
         <button @click="gameState = 'SELECT_HERO'" class="flex items-center space-x-1.5 text-slate-400 hover:text-red-500 transition-all font-bold text-xs bg-black/60 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
           <i class="ph-bold ph-arrow-left"></i> <span>撤退</span>
         </button>
@@ -142,53 +158,53 @@
       </div>
 
       <div class="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none z-0">
-        <img :src="getImgUrl(currentEnemy.id)" class="w-full h-full object-cover blur-md" />
+        <img :src="getImgUrl(currentEnemy.id)" class="w-full h-full object-cover blur-sm" />
       </div>
       
-      <div class="game-container w-full max-w-4xl mx-auto flex-grow z-10 my-auto">
+      <div class="game-container w-full max-w-4xl mx-auto flex-grow z-10 my-auto justify-center">
         
-        <div :class="['relative flex items-center justify-center h-[160px] xs:h-[200px] md:h-[380px] md:flex-1 transition-transform duration-300 flex-shrink-0 mb-4 md:mb-0', isHitting ? 'translate-x-2 scale-105' : '']">
+        <div :class="['relative flex items-center justify-center h-[140px] xs:h-[180px] md:h-[350px] md:flex-1 transition-transform duration-300 flex-shrink-0 mb-3 md:mb-0', isHitting ? 'translate-x-2 scale-105' : '']">
           <img :src="getImgUrl(currentEnemy.id)" class="h-full w-auto object-contain drop-shadow-[0_0_25px_rgba(220,38,38,0.4)]" />
-          <div class="absolute top-0 left-0 bg-black/90 backdrop-blur-md border-l-4 border-red-600 px-3 py-1 rounded-br-xl z-20 text-left shadow-md">
+          <div class="absolute top-0 left-0 bg-black/90 backdrop-blur-md border-l-4 border-red-600 px-3 py-0.5 rounded-br-xl z-20 text-left shadow-md">
             <p class="text-red-500 text-[8px] uppercase font-bold tracking-[0.1em]">Boss Fight</p>
-            <p class="text-sm font-black italic uppercase" v-text="currentEnemy.name"></p>
+            <p class="text-xs font-black italic uppercase" v-text="currentEnemy.name"></p>
           </div>
         </div>
 
-        <div class="bg-slate-900/95 backdrop-blur-md p-5 md:p-6 rounded-2xl border border-white/10 shadow-xl flex-shrink-0 w-full max-w-md mx-auto md:flex-1">
-          <div class="flex justify-between items-center mb-4">
+        <div class="bg-slate-900/95 backdrop-blur-md p-4 md:p-6 rounded-2xl border border-white/10 shadow-xl flex-shrink-0 w-full max-w-md mx-auto md:flex-1">
+          <div class="flex justify-between items-center mb-3">
             <div class="flex space-x-1">
-              <div v-for="i in ENEMY_MAX_HP" :key="i" :class="['w-5 h-5 rounded-md flex items-center justify-center transition-all duration-500', (i - 1) < (ENEMY_MAX_HP - wordIndex) ? 'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]' : 'bg-slate-800 opacity-20 scale-90']">
-                <span class="text-[9px]">{{ (i - 1) < (ENEMY_MAX_HP - wordIndex) ? '♥' : '💀' }}</span>
+              <div v-for="i in ENEMY_MAX_HP" :key="i" :class="['w-4 h-4 rounded-md flex items-center justify-center transition-all duration-500', (i - 1) < (ENEMY_MAX_HP - wordIndex) ? 'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]' : 'bg-slate-800 opacity-20 scale-90']">
+                <span class="text-[8px]">{{ (i - 1) < (ENEMY_MAX_HP - wordIndex) ? '♥' : '💀' }}</span>
               </div>
             </div>
-            <h3 class="text-2xl md:text-3xl font-black tracking-tight text-white uppercase bg-black/30 px-3 py-1 rounded-lg" v-text="currentWordObj?.c || ''"></h3>
+            <h3 class="text-xl md:text-2xl font-black tracking-tight text-white uppercase bg-black/30 px-3 py-0.5 rounded-lg" v-text="currentWordObj?.c || ''"></h3>
           </div>
 
-          <div class="bg-black/60 p-3.5 rounded-xl mb-4 border border-white/5 flex items-center justify-between shadow-inner">
-            <div class="text-2xl md:text-3xl font-mono tracking-[0.1em] text-red-500/90 pl-1 font-bold" v-text="getHint()"></div>
-            <button @click="speakWord" :disabled="isSpeaking" :class="['p-2.5 rounded-full transition-all flex-shrink-0', isSpeaking ? 'bg-red-500 animate-pulse scale-105' : 'bg-white/5 hover:bg-white/10']">
-              <i :class="['ph-fill ph-speaker-high text-xl md:text-2xl', isSpeaking ? 'text-white' : 'text-slate-400']"></i>
+          <div class="bg-black/60 p-3 rounded-xl mb-3 border border-white/5 flex items-center justify-between shadow-inner">
+            <div class="text-xl md:text-2xl font-mono tracking-[0.1em] text-red-500/90 pl-1 font-bold" v-text="getHint()"></div>
+            <button @click="speakWord" :disabled="isSpeaking" :class="['p-2 rounded-full transition-all flex-shrink-0', isSpeaking ? 'bg-red-500 animate-pulse scale-105' : 'bg-white/5 hover:bg-white/10']">
+              <i :class="['ph-fill ph-speaker-high text-lg md:text-xl', isSpeaking ? 'text-white' : 'text-slate-400']"></i>
             </button>
           </div>
 
-          <form @submit.prevent="checkAnswer" class="space-y-3">
-            <input type="text" ref="wordInput" v-model="userInput" placeholder="拼寫單字發動攻擊..." class="w-full bg-black/60 border-2 border-slate-700 focus:border-red-600 rounded-xl px-4 py-3 text-lg font-bold lowercase text-center outline-none transition-all"/>
-            <button type="submit" class="w-full bg-gradient-to-r from-red-700 to-red-900 py-3 rounded-xl font-black text-lg shadow-md active:scale-[0.98] uppercase tracking-wider transition-all">斬 滅 邪 靈</button>
+          <form @submit.prevent="checkAnswer" class="space-y-2">
+            <input type="text" ref="wordInput" v-model="userInput" placeholder="拼寫單字發動攻擊..." class="w-full bg-black/60 border-2 border-slate-700 focus:border-red-600 rounded-xl px-4 py-2.5 text-base font-bold lowercase text-center outline-none transition-all"/>
+            <button type="submit" class="w-full bg-gradient-to-r from-red-700 to-red-900 py-2.5 rounded-xl font-black text-base shadow-md active:scale-[0.98] uppercase tracking-wider transition-all">斬 滅 邪 靈</button>
           </form>
-          <div v-if="message" :class="['mt-3 p-2 rounded-xl text-center font-black text-xs tracking-widest', message.includes('漂亮') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400']" v-text="message"></div>
+          <div v-if="message" :class="['mt-2 p-1 rounded-xl text-center font-black text-[10px] tracking-widest', message.includes('漂亮') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400']" v-text="message"></div>
         </div>
       </div>
 
-      <div class="w-full max-w-md md:max-w-4xl mx-auto z-30 mt-3 flex-shrink-0">
-        <div class="bg-slate-900/95 border border-white/10 px-4 py-2 rounded-xl flex items-center space-x-3 w-full shadow-lg">
-          <div class="w-10 h-10 rounded-lg bg-slate-800 border border-red-600 overflow-hidden shadow-md flex-shrink-0">
+      <div class="w-full max-w-md md:max-w-4xl mx-auto z-30 mt-2 flex-shrink-0">
+        <div class="bg-slate-900/95 border border-white/10 px-4 py-1.5 rounded-xl flex items-center space-x-3 w-full shadow-lg">
+          <div class="w-8 h-8 rounded-lg bg-slate-800 border border-red-600 overflow-hidden shadow-md flex-shrink-0">
             <img :src="selectedHero.imageUrl" class="w-full h-full object-cover" />
           </div>
           <div class="flex-grow text-left">
             <div class="flex justify-between items-end mb-0.5">
-              <p class="font-black text-xs md:text-sm italic tracking-tight uppercase" v-text="selectedHero.name + ' - ' + selectedHero.profession"></p>
-              <span class="text-[8px] md:text-[10px] text-slate-500 font-black uppercase" v-text="'HP ' + (maxErrors - totalErrors) + ' / ' + maxErrors"></span>
+              <p class="font-black text-[10px] md:text-xs italic tracking-tight uppercase" v-text="selectedHero.name + ' - ' + selectedHero.profession"></p>
+              <span class="text-[8px] text-slate-500 font-black uppercase" v-text="'HP ' + (maxErrors - totalErrors) + ' / ' + maxErrors"></span>
             </div>
             <div class="w-full bg-slate-950 h-1 rounded-full overflow-hidden border border-white/5">
               <div class="bg-gradient-to-r from-red-600 to-red-400 h-full transition-all duration-1000" :style="{ width: ((maxErrors - totalErrors) / maxErrors * 100) + '%' }"></div>
@@ -198,7 +214,7 @@
       </div>
     </div>
 
-    <div v-if="gameState === 'GAME_OVER' || gameState === 'VICTORY'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-start py-8 px-4 relative overflow-y-auto">
+    <div v-if="gameState === 'GAME_OVER' || gameState === 'VICTORY'" class="w-full h-full bg-slate-950 flex flex-col items-center justify-start py-8 px-4 relative overflow-y-auto scrollbar-hide">
       <div class="relative mb-4 flex flex-col items-center mt-4">
         <img :src="selectedHero?.imageUrl" :class="['w-24 h-24 md:w-32 md:h-32 object-cover rounded-full border-4 transition-all', gameState === 'VICTORY' ? 'border-yellow-500 shadow-yellow-500/50 shadow-xl' : 'border-red-900 grayscale opacity-40']" />
         <h1 :class="['text-4xl md:text-6xl font-black mt-4 mb-1 italic tracking-tighter drop-shadow-2xl text-center', gameState === 'VICTORY' ? 'text-yellow-400' : 'text-red-600 animate-pulse']" v-text="gameState === 'VICTORY' ? '百鬼封印完成' : 'YOU DIED'">
