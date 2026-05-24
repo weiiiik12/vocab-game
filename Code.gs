@@ -1,128 +1,505 @@
-const SPREADSHEET_ID = '1etfiDXLL0_8iiSZxFI5MwTZcA59mvycTtiNJ53OGvio';
-
-// 允許跨網域存取的 Header
-function getCorsResponse(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// 1. 處理 GitHub 來的「讀取」請求 (題庫與排行榜)
-function doGet(e) {
-  const action = e.parameter.action;
-  
-  if (action === 'getVocabData') {
-    const data = getVocabData();
-    return getCorsResponse({ success: true, data: data });
-  }
-  
-  if (action === 'getLeaderboard') {
-    const data = getLeaderboard();
-    return getCorsResponse({ success: true, data: data });
-  }
-  
-  return getCorsResponse({ success: false, message: '未知的指令' });
-}
-
-// 2. 處理 GitHub 來的「寫入」請求 (儲存排行榜成績)
-function doPost(e) {
-  try {
-    const postData = JSON.parse(e.postData.contents);
-    const { name, profession, difficulty, timeSeconds, errors } = postData;
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>單字殺鬼傳 - 戰國轉生</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <style>
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="bg-slate-950 text-white selection:bg-red-500/30">
+  <div id="app" v-cloak>
     
-    const success = saveScore(name, profession, difficulty, timeSeconds, errors);
-    return getCorsResponse({ success: success });
-  } catch (error) {
-    return getCorsResponse({ success: false, error: error.toString() });
-  }
-}
+    <div v-if="gameState === 'LOADING'" class="h-screen bg-slate-950 flex flex-col items-center justify-center p-12 text-center">
+      <p class="text-slate-500 font-black text-xs uppercase animate-pulse mb-4">正在連接異界...</p>
+      <div class="w-12 h-12 border-4 border-red-600/30 border-t-red-600 rounded-full animate-spin"></div>
+    </div>
 
-// 3. 讀取全域題庫 (維持原樣)
-function getVocabData() {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheets = ss.getSheets();
-    const result = {}; 
-    
-    sheets.forEach(sheet => {
-      const sheetName = sheet.getName();
-      if (sheetName === '排行榜') return;
+    <div v-if="gameState === 'START'" class="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden text-center">
+      <div class="relative z-10 space-y-6">
+        <h1 class="text-6xl md:text-9xl font-black italic drop-shadow-2xl tracking-tighter uppercase">單字殺鬼傳</h1>
+        <div class="h-1.5 w-48 bg-red-600 mx-auto rounded-full shadow-[0_0_20px_rgba(220,38,38,0.5)]"></div>
+        <p class="text-slate-500 tracking-[0.8em] uppercase text-xs font-black">Sengoku Word Slayer</p>
+        <div class="py-12 flex flex-col items-center space-y-6">
+          <button @click="gameState = 'SELECT_DIFFICULTY'" class="group relative px-20 py-6 font-black text-2xl md:text-3xl transition-all outline-none">
+            <span class="absolute inset-0 bg-white text-black rounded-2xl skew-x-[-12deg] group-hover:bg-red-600 transition-all shadow-xl"></span>
+            <span class="relative z-10 text-black group-hover:text-white transition-colors uppercase">踏上征途</span>
+          </button>
+          <button @click="openLeaderboard" class="flex items-center space-x-2 text-slate-400 hover:text-yellow-400 transition-colors font-bold text-lg mt-4">
+            <i class="ph-fill ph-trophy"></i> <span>英雄榜</span>
+          </button>
+        </div>
+        <p v-if="formError" class="text-red-500 text-sm mt-2" v-text="formError"></p>
+      </div>
+    </div>
+
+    <div v-if="gameState === 'LEADERBOARD'" class="min-h-screen bg-slate-950 flex flex-col items-center p-6 md:p-12 relative overflow-y-auto">
+      <button @click="gameState = 'START'" class="absolute top-6 left-6 flex items-center space-x-2 text-slate-400 hover:text-white font-bold text-sm bg-white/5 px-4 py-2 rounded-full border border-white/10">
+        <i class="ph-bold ph-arrow-left"></i> <span>返回首頁</span>
+      </button>
+      <h2 class="text-4xl md:text-5xl font-black mb-8 tracking-widest uppercase text-yellow-500 flex items-center">
+        <i class="ph-fill ph-crown mr-4"></i>討伐英雄榜
+      </h2>
+      <div v-if="Object.keys(leaderboardData).length === 0" class="text-slate-500 font-bold mt-20">目前還沒有英雄留下紀錄，快去挑戰吧！</div>
+      <div v-else class="w-full max-w-4xl">
+        <div class="flex flex-wrap gap-2 justify-center mb-8">
+          <button v-for="diff in Object.keys(leaderboardData)" :key="diff" @click="currentBoardTab = diff" :class="['px-6 py-2 rounded-full font-black transition-all', currentBoardTab === diff ? 'bg-red-600 text-white shadow-lg shadow-red-600/40' : 'bg-slate-800 text-slate-400 hover:bg-slate-700']" v-text="diff">
+          </button>
+        </div>
+        <div class="bg-slate-900/80 border border-white/10 rounded-[2rem] p-4 md:p-8 shadow-2xl backdrop-blur-md">
+          <div class="grid grid-cols-12 gap-4 text-slate-500 text-xs md:text-sm font-black uppercase mb-4 px-4 border-b border-white/10 pb-4">
+            <div class="col-span-2 text-center">排名</div>
+            <div class="col-span-4 text-left">英雄名號</div>
+            <div class="col-span-3 text-center">通關時間</div>
+            <div class="col-span-3 text-center">失誤</div>
+          </div>
+          <div v-for="(player, index) in leaderboardData[currentBoardTab]" :key="index" :class="['grid grid-cols-12 gap-4 items-center p-4 rounded-2xl mb-2 transition-all', index === 0 ? 'bg-gradient-to-r from-yellow-900/40 to-transparent border border-yellow-500/30' : index === 1 ? 'bg-slate-800/50' : index === 2 ? 'bg-orange-950/30' : 'hover:bg-white/5']">
+            <div class="col-span-2 flex justify-center">
+              <i v-if="index === 0" class="ph-fill ph-medal text-3xl text-yellow-400"></i>
+              <i v-else-if="index === 1" class="ph-fill ph-medal text-3xl text-slate-300"></i>
+              <i v-else-if="index === 2" class="ph-fill ph-medal text-3xl text-orange-400"></i>
+              <span v-else class="text-xl font-bold text-slate-500" v-text="index + 1"></span>
+            </div>
+            <div class="col-span-4 flex flex-col text-left">
+              <span :class="['font-black text-lg md:text-xl truncate', index === 0 ? 'text-yellow-400' : 'text-white']" v-text="player.name"></span>
+              <span class="text-xs text-slate-400 font-bold" v-text="player.profession"></span>
+            </div>
+            <div class="col-span-3 text-center font-mono text-lg font-bold text-emerald-400" v-text="formatTime(player.time)"></div>
+            <div class="col-span-3 text-center font-bold text-red-400" v-text="player.errors + ' 次'"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="gameState === 'SELECT_DIFFICULTY'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 md:p-6 text-center">
+      <button @click="gameState = 'START'" class="absolute top-6 left-6 flex items-center space-x-2 text-slate-400 hover:text-white font-bold text-sm bg-white/5 px-4 py-2 rounded-full border border-white/10">
+        <i class="ph-bold ph-arrow-left"></i> <span>返回首頁</span>
+      </button>
+      <h2 class="text-3xl md:text-5xl font-black mb-10 tracking-widest uppercase">選擇試煉難度</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+        <button v-for="(sheetName, index) in Object.keys(allVocab)" :key="sheetName" @click="initGameWords(sheetName)" :class="['group p-8 md:p-10 rounded-[3rem] bg-gradient-to-br border border-white/10 transition-all hover:scale-105', getDifficultyColor(index)]">
+          <p class="text-2xl md:text-3xl font-black mb-2" v-text="sheetName"></p>
+          <p class="text-[10px] bg-black/40 py-1 px-3 rounded-full inline-block font-black uppercase mt-2" v-text="allVocab[sheetName].length + ' 單字'"></p>
+        </button>
+      </div>
+    </div>
+
+    <div v-if="gameState === 'SELECT_HERO'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center relative">
+      <button @click="gameState = 'SELECT_DIFFICULTY'" class="absolute top-6 left-6 flex items-center space-x-2 text-slate-400 hover:text-white font-bold text-sm bg-white/5 px-4 py-2 rounded-full border border-white/10">
+        <i class="ph-bold ph-arrow-left"></i> <span>重新選難度</span>
+      </button>
+      <h2 class="text-3xl md:text-4xl font-black mb-12 tracking-widest uppercase">選擇冒險者</h2>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-4xl">
+        <button v-for="[key, id] in Object.entries(IDS.hero)" :key="key" @click="handleHeroSelect(key, id)" class="group bg-slate-900 border-2 border-slate-800 hover:border-red-600 rounded-[2rem] overflow-hidden transition-all aspect-[3/4] relative">
+          <img :src="getImgUrl(id)" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-all" :alt="key"/>
+          <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent opacity-90"></div>
+          <div class="absolute bottom-6 left-0 right-0 font-black text-xl" v-text="heroNames[key]"></div>
+        </button>
+      </div>
+      <div v-if="showNamePrompt" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div class="bg-slate-900 border border-white/10 p-8 rounded-[2rem] shadow-2xl w-full max-w-md">
+          <h3 class="text-2xl font-black mb-2">輸入玩家名稱</h3>
+          <p class="text-slate-400 text-sm mb-6">這將顯示在排行榜上！</p>
+          <input type="text" v-model="playerName" placeholder="請輸入名號..." class="w-full bg-black/50 border-2 border-slate-700 rounded-xl px-4 py-3 text-lg text-center focus:border-red-500 outline-none mb-6" @keydown.enter="confirmHero" />
+          <p v-if="formError" class="text-red-500 text-sm mb-4" v-text="formError"></p>
+          <div class="flex space-x-4">
+            <button @click="showNamePrompt = false" class="flex-1 py-3 rounded-xl bg-slate-800 font-bold hover:bg-slate-700">取消</button>
+            <button @click="confirmHero" class="flex-1 py-3 rounded-xl bg-red-600 font-bold shadow-lg shadow-red-600/30 hover:bg-red-500">確認出陣</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="gameState === 'BATTLE'" class="h-screen bg-slate-950 relative flex flex-col items-center justify-center py-4 px-4 text-center overflow-hidden">
+      <div class="absolute top-4 left-4 right-4 z-50 flex justify-between items-center">
+        <button @click="gameState = 'SELECT_HERO'" class="flex items-center space-x-2 text-slate-400 hover:text-red-500 transition-all font-bold text-xs bg-black/60 px-4 py-2 rounded-full border border-white/10 backdrop-blur-md">
+          <i class="ph-bold ph-arrow-left"></i> <span>撤退</span>
+        </button>
+        <div class="flex items-center space-x-2 bg-black/60 px-5 py-2 rounded-full border border-white/10 backdrop-blur-md">
+          <i class="ph-bold ph-timer text-yellow-500 text-lg"></i>
+          <span class="font-mono font-bold text-lg text-yellow-400 tracking-wider" v-text="formatTime(timeElapsed)"></span>
+        </div>
+      </div>
+
+      <div class="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none scale-125 z-0">
+        <img :src="getImgUrl(currentEnemy.id)" :class="['w-full h-full object-cover transition-all duration-700', isHitting ? 'scale-110 brightness-150' : 'blur-sm grayscale-[0.3]']" />
+        <div class="absolute inset-0 bg-slate-950/70 backdrop-blur-[1px]"></div>
+      </div>
       
-      const data = sheet.getDataRange().getValues();
-      if (data.length < 2) return; 
+      <div class="relative z-10 w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 items-center flex-grow">
+        <div :class="['relative flex items-center justify-center h-[160px] md:h-[25vh] lg:h-[400px] transition-transform duration-300', isHitting ? 'translate-x-2 scale-105' : '']">
+          <img :src="getImgUrl(currentEnemy.id)" :class="['h-full w-auto object-contain drop-shadow-[0_0_30px_rgba(220,38,38,0.5)]', isHitting ? 'animate-pulse' : '']" />
+          <div class="absolute top-2 left-2 bg-black/90 backdrop-blur-md border-l-4 border-red-600 px-4 py-2 rounded-br-2xl z-20 text-left shadow-xl">
+            <p class="text-red-500 text-[8px] uppercase font-bold tracking-[0.2em]">Boss Fight</p>
+            <p class="text-lg md:text-xl font-black italic uppercase tracking-tighter" v-text="currentEnemy.name"></p>
+          </div>
+        </div>
+
+        <div class="bg-slate-900/95 backdrop-blur-3xl p-5 md:p-8 rounded-[2rem] border border-white/10 shadow-2xl z-20">
+          <div class="flex flex-col items-center lg:items-start space-y-1 mb-4">
+            <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-black/80 px-2 py-0.5 rounded-full border border-red-900/50">Monster Vitality</span>
+            <div class="flex space-x-1.5 py-1">
+              <div v-for="i in ENEMY_MAX_HP" :key="i" :class="['w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center transition-all duration-500', (i - 1) < (ENEMY_MAX_HP - wordIndex) ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'bg-slate-800 opacity-20 scale-90']">
+                <span class="text-xs" v-text="(i - 1) < (ENEMY_MAX_HP - wordIndex) ? '♥' : '💀'"></span>
+              </div>
+            </div>
+          </div>
+          <div class="mb-4 flex flex-col items-center">
+            <h3 class="text-3xl md:text-5xl font-black tracking-tighter drop-shadow-md uppercase" v-text="currentWordObj?.c || ''"></h3>
+          </div>
+          <div class="bg-black/40 p-4 md:p-5 rounded-2xl mb-4 border border-white/5 relative">
+            <p class="text-slate-600 text-[8px] mb-2 uppercase font-black opacity-50">封印咒語提示</p>
+            <div class="flex items-center justify-center space-x-4">
+              <div class="text-2xl md:text-4xl font-mono tracking-[0.15em] text-red-500/80" v-text="getHint()"></div>
+              <button @click="speakWord" :disabled="isSpeaking" :class="['p-2 rounded-full transition-all', isSpeaking ? 'bg-red-500 animate-pulse scale-110' : 'bg-white/5 hover:bg-white/10']">
+                <i :class="['ph-fill ph-speaker-high text-[20px]', isSpeaking ? 'text-white' : 'text-slate-500']"></i>
+              </button>
+            </div>
+          </div>
+          <form @submit.prevent="checkAnswer" class="space-y-4">
+            <input type="text" ref="wordInput" v-model="userInput" placeholder="拼寫單字發動攻擊..." class="w-full bg-black/40 border-2 border-slate-800 rounded-xl px-6 py-3 md:py-4 text-lg md:text-xl focus:border-red-600 outline-none font-bold lowercase text-center"/>
+            <button type="submit" class="w-full bg-gradient-to-r from-red-800 to-red-950 py-3 md:py-4 rounded-xl font-black text-lg md:text-xl shadow-lg active:scale-95 uppercase">斬 滅 邪 靈</button>
+          </form>
+          <div v-if="message" :class="['mt-4 p-2 rounded-xl text-center font-black text-[10px] md:text-xs tracking-widest', message.includes('漂亮') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400']" v-text="message"></div>
+        </div>
+      </div>
+
+      <div class="relative z-30 flex items-center justify-center w-full max-w-lg mt-4">
+        <div class="bg-slate-900/95 border border-white/10 px-6 py-2 rounded-full md:rounded-[2rem] flex items-center space-x-4 w-full shadow-2xl">
+          <div class="w-10 h-10 md:w-14 md:h-14 rounded-full md:rounded-xl bg-slate-800 border-2 border-red-600 overflow-hidden shadow-lg transform -rotate-2 flex-shrink-0">
+            <img :src="selectedHero.imageUrl" class="w-full h-full object-cover" />
+          </div>
+          <div class="flex-grow text-left">
+            <div class="flex justify-between items-end mb-1">
+              <p class="font-black text-xs md:text-sm italic tracking-tighter uppercase" v-text="selectedHero.name + ' - ' + selectedHero.profession"></p>
+              <span class="text-[8px] md:text-[9px] text-slate-500 font-black uppercase" v-text="'HP ' + (maxErrors - totalErrors) + ' / ' + maxErrors"></span>
+            </div>
+            <div class="w-full bg-slate-950 h-1 rounded-full overflow-hidden border border-white/5">
+              <div class="bg-gradient-to-r from-red-600 to-red-400 h-full transition-all duration-1000" :style="{ width: ((maxErrors - totalErrors) / maxErrors * 100) + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="gameState === 'GAME_OVER' || gameState === 'VICTORY'" class="min-h-screen bg-slate-950 flex flex-col items-center justify-start py-10 px-4 md:px-6 relative overflow-y-auto">
+      <div class="relative mb-6 flex flex-col items-center">
+        <img :src="selectedHero?.imageUrl" :class="['w-32 h-32 md:w-40 md:h-40 object-cover rounded-full border-4 transition-all', gameState === 'VICTORY' ? 'border-yellow-500 shadow-yellow-500/50 shadow-2xl' : 'border-red-900 grayscale opacity-40']" />
+        <h1 :class="['text-5xl md:text-6xl font-black mt-6 mb-2 italic tracking-tighter drop-shadow-2xl text-center', gameState === 'VICTORY' ? 'text-yellow-400' : 'text-red-600 animate-pulse']" v-text="gameState === 'VICTORY' ? '百鬼封印完成' : 'YOU DIED'">
+        </h1>
+        <p class="text-sm md:text-base text-slate-400 tracking-widest font-black uppercase text-center" v-text="selectedHero?.name + (gameState === 'VICTORY' ? ' 之武勇已銘刻歷史' : ' 靈魂已在此消散')">
+        </p>
+        
+        <div v-if="gameState === 'VICTORY'" class="mt-6 bg-yellow-500/10 border border-yellow-500/30 px-6 py-3 rounded-full flex items-center space-x-3 text-yellow-400 font-black">
+          <i class="ph-fill ph-timer text-2xl"></i>
+          <span class="text-xl" v-text="'通關時間：' + formatTime(timeElapsed)"></span>
+          <span class="text-sm text-slate-400 ml-2">(成績已上傳至英雄榜)</span>
+        </div>
+      </div>
+
+      <div class="w-full max-w-4xl bg-slate-900/80 border border-white/10 rounded-[2rem] p-5 md:p-8 mt-4 mb-8 shadow-2xl backdrop-blur-md">
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 px-2 gap-4">
+          <h2 class="text-xl md:text-2xl font-black uppercase tracking-widest flex items-center"><i class="ph-fill ph-scroll text-red-500 mr-3 text-2xl"></i>【<span v-text="difficulty"></span>】戰報紀錄</h2>
+          <div class="text-xs md:text-sm font-bold text-slate-400 bg-black/50 px-4 py-2 rounded-full border border-white/5 flex items-center">
+            完美討伐 <span class="text-emerald-400 ml-2" v-text="perfectCount"></span> / <span v-text="encounteredWordsList.length"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
+          <div v-for="(wordObj, i) in encounteredWordsList" :key="i" :class="['flex items-center justify-between p-4 md:p-5 rounded-[1.5rem] border', (wordErrors[wordObj.w] || 0) === 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20']">
+            <div class="flex flex-col text-left">
+              <span class="font-mono text-lg md:text-xl font-black" v-text="wordObj.w"></span>
+              <span class="text-xs md:text-sm font-bold text-slate-400 mt-1" v-text="wordObj.c"></span>
+            </div>
+            <div>
+              <span v-if="(wordErrors[wordObj.w] || 0) === 0" class="flex items-center space-x-1 text-emerald-400 text-xs md:text-sm font-bold bg-emerald-500/20 px-3 py-1 rounded-full">
+                <i class="ph-bold ph-check"></i><span>無傷</span>
+              </span>
+              <span v-else class="flex items-center space-x-1 text-red-400 text-xs md:text-sm font-bold bg-red-500/20 px-3 py-1 rounded-full">
+                <i class="ph-bold ph-x"></i><span>失誤 <span v-text="wordErrors[wordObj.w]"></span> 次</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
       
-      const headers = data[0].map(h => String(h).trim());
-      let wIdx = headers.findIndex(h => h.includes('單字') || h.toLowerCase().includes('word'));
-      let tIdx = headers.findIndex(h => h.includes('翻譯') || h.includes('中文') || h.toLowerCase().includes('mean'));
-      
-      if (wIdx === -1) wIdx = 0; 
-      if (tIdx === -1) tIdx = 1; 
-      
-      const wordsArray = [];
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        if (row.length > Math.max(wIdx, tIdx)) {
-          const word = String(row[wIdx]).trim();
-          const trans = String(row[tIdx]).trim();
-          if (word && trans) wordsArray.push({ w: word, c: trans });
-        }
+      <div class="flex flex-col sm:flex-row gap-4 mb-10 z-50">
+        <button @click="resetGame" :class="['px-12 py-4 rounded-full font-black text-xl transition-all shadow-xl hover:scale-105 active:scale-95', gameState === 'VICTORY' ? 'bg-white text-black hover:bg-slate-200' : 'bg-red-600 text-white shadow-red-600/50 hover:bg-red-500']">再續傳奇</button>
+        <button v-if="gameState === 'VICTORY'" @click="openLeaderboard" class="px-12 py-4 rounded-full font-black text-xl transition-all shadow-xl hover:scale-105 active:scale-95 bg-yellow-500 text-black hover:bg-yellow-400 shadow-yellow-500/50"><i class="ph-fill ph-trophy mr-2"></i>查看英雄榜</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, watch } = Vue;
+
+    // 🚨 已經幫你自動換上今天最新的 Google 後端執行網址了！
+    const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxnyblZMZTDFquVdRCZ4d82L5NsRWInsoFRCzlWLqBFYzjGtjbkysumRdy61z0aWsnYsA/exec'; 
+
+    createApp({
+      setup() {
+        const gameState = ref('LOADING');
+        const allVocab = ref({});
+        const difficulty = ref(null);
+        const gameWords = ref([]);
+        const selectedHero = ref(null);
+        const enemyIndex = ref(0);
+        const wordIndex = ref(0);
+        const userInput = ref('');
+        const totalErrors = ref(0);
+        const wrongCountThisWord = ref(0);
+        const wordErrors = ref({});
+        const message = ref('');
+        const isHitting = ref(false);
+        const isSpeaking = ref(false);
+        const formError = ref('');
+        const showNamePrompt = ref(false);
+        const pendingHero = ref(null);
+        const playerName = ref('');
+        
+        const timeElapsed = ref(0);
+        let timerInterval = null;
+        const leaderboardData = ref({});
+        const currentBoardTab = ref('');
+
+        const maxErrors = 10;
+        const ENEMY_MAX_HP = 5;
+
+        const IDS = {
+          hero: {
+            princess: '1YTdCCTLhcfIrZ15biInKjfguwHjVX6TP',
+            ninja: '1gApeoE9fXD0U6D7JxSdHeqzKYBk-EO26',
+            samurai: '1Q7AGw8CHNnBHpVgHxzWiIQ3EvBu70vwx',
+            ronin: '1Zx8Jn-xim0-ab2kLyJhdVgMIP5_N-3EF'
+          },
+          enemy: [
+            { name: '雨傘鬼', id: '1fK4BZTqhpmMnp3VOCXculNhv3MJcrXZI', title: 'Kasa-obake' },
+            { name: '天狗', id: '1FHmICKs131-jO9h-2xQXPub3IO1m78xS', title: 'Tengu' },
+            { name: '雷神', id: '1LdkCECn8WA6aUzskjSruKUYEnXZOOtV3', title: 'Raijin' },
+            { name: '雪女', id: '1tgxvvLbEFUm8TKSQIBSjnFWSV_boeQSs', title: 'Yuki-onna' }
+          ]
+        };
+
+        const heroNames = { princess: '公主', ronin: '浪人', samurai: '武士', ninja: '忍者' };
+
+        const getImgUrl = (id) => `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
+
+        const runServer = async (actionName, payload = null) => {
+          try {
+            let url = `${GAS_WEBAPP_URL}?action=${actionName}`;
+            let options = { method: 'GET' };
+            
+            if (actionName === 'saveScore' && payload) {
+              url = GAS_WEBAPP_URL;
+              options = {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              };
+            }
+
+            const response = await fetch(url, options);
+            if (actionName === 'saveScore') return true; 
+
+            const resData = await response.json();
+            if (resData.success) return resData.data;
+            throw new Error(resData.message || '後端回傳錯誤');
+          } catch (e) {
+            console.error(`網路請求失敗 [${actionName}]:`, e);
+            throw e;
+          }
+        };
+
+        const formatTime = (seconds) => {
+          const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+          const s = (seconds % 60).toString().padStart(2, '0');
+          return `${m}:${s}`;
+        };
+
+        watch(gameState, (newState) => {
+          if (newState === 'BATTLE') {
+            timeElapsed.value = 0;
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => { timeElapsed.value++; }, 1000);
+          } else {
+            clearInterval(timerInterval);
+          }
+        });
+
+        const fetchServerData = async () => {
+          try {
+            const globalData = await runServer('getVocabData');
+            allVocab.value = globalData;
+            setTimeout(() => gameState.value = 'START', 400);
+          } catch (error) {
+            formError.value = "讀取資料失敗，請確認後端網址設定正確。";
+            gameState.value = 'START';
+          }
+        };
+        fetchServerData();
+
+        const getDifficultyColor = (index) => {
+          const colorClasses = ['from-emerald-600 to-emerald-950', 'from-blue-600 to-blue-950', 'from-purple-600 to-purple-950', 'from-orange-600 to-orange-950', 'from-rose-600 to-rose-950'];
+          return colorClasses[index % colorClasses.length];
+        };
+
+        const initGameWords = (diff) => {
+          const combined = [...(allVocab.value[diff] || [])];
+          if (combined.length < 20) {
+            alert(`該難度單字量不足 20 個，請檢查試算表`);
+            return;
+          }
+          difficulty.value = diff;
+          gameWords.value = [...combined].sort(() => 0.5 - Math.random()).slice(0, 20);
+          gameState.value = 'SELECT_HERO';
+        };
+
+        const handleHeroSelect = (key, id) => {
+          pendingHero.value = { key, id, professionName: heroNames[key] };
+          showNamePrompt.value = true;
+          playerName.value = '';
+          formError.value = '';
+        };
+
+        const confirmHero = () => {
+          if (!playerName.value.trim()) {
+            formError.value = "請輸入您的名字！";
+            return;
+          }
+          formError.value = '';
+          selectedHero.value = {
+            key: pendingHero.value.key,
+            name: playerName.value.trim(),
+            imageUrl: getImgUrl(pendingHero.value.id),
+            profession: pendingHero.value.professionName
+          };
+          showNamePrompt.value = false;
+          gameState.value = 'BATTLE';
+        };
+
+        const currentEnemy = computed(() => IDS.enemy[enemyIndex.value] || IDS.enemy[0]);
+        const currentWordObj = computed(() => gameWords.value[enemyIndex.value * 5 + wordIndex.value]);
+
+        const getHint = () => {
+          const word = currentWordObj.value?.w || '';
+          if (!word) return '';
+          const alphaOnly = word.replace(/[^a-zA-Z]/g, '');
+          let revealed = 2 + wrongCountThisWord.value;
+          let res = '';
+          let alphaCounter = 0;
+          for (let char of word) {
+            if (/[a-zA-Z]/.test(char)) {
+              if (alphaCounter === 0 || alphaCounter === alphaOnly.length - 1 || alphaCounter < revealed - 1) res += char;
+              else res += '_';
+              alphaCounter++;
+            } else res += char;
+          }
+          return res.split('').join(' ');
+        };
+
+        const speakWord = () => {
+          const word = currentWordObj.value?.w;
+          if (!word) return;
+          isSpeaking.value = true;
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(word);
+          utterance.lang = 'en-US';
+          utterance.onend = () => isSpeaking.value = false;
+          utterance.onerror = () => isSpeaking.value = false;
+          window.speechSynthesis.speak(utterance);
+        };
+
+        const checkAnswer = () => {
+          const currentWord = currentWordObj.value?.w || '';
+          if (userInput.value.toLowerCase().trim() === currentWord.toLowerCase().trim()) {
+            isHitting.value = true;
+            message.value = '漂亮的一擊！';
+            setTimeout(() => {
+              isHitting.value = false;
+              nextQuestion();
+            }, 600);
+          } else {
+            wordErrors.value[currentWord] = (wordErrors.value[currentWord] || 0) + 1;
+            const nextErrors = totalErrors.value + 1;
+            wrongCountThisWord.value++;
+            if (nextErrors >= maxErrors) {
+              gameState.value = 'GAME_OVER';
+            } else {
+              totalErrors.value = nextErrors;
+              message.value = '攻擊落空！';
+              userInput.value = '';
+            }
+          }
+        };
+
+        const nextQuestion = async () => {
+          userInput.value = '';
+          wrongCountThisWord.value = 0;
+          message.value = '';
+          if (wordIndex.value < 4) {
+            wordIndex.value++;
+          } else if (enemyIndex.value < 3) {
+            enemyIndex.value++;
+            wordIndex.value = 0;
+            message.value = `✨ 已擊破敵將！`;
+          } else {
+            clearInterval(timerInterval);
+            gameState.value = 'VICTORY';
+            await runServer('saveScore', {
+              name: selectedHero.value.name,
+              profession: selectedHero.value.profession,
+              difficulty: difficulty.value,
+              timeSeconds: timeElapsed.value,
+              errors: totalErrors.value
+            });
+          }
+        };
+
+        const resetGame = () => {
+          gameState.value = 'START'; difficulty.value = null; gameWords.value = []; selectedHero.value = null;
+          enemyIndex.value = 0; wordIndex.value = 0; totalErrors.value = 0; wrongCountThisWord.value = 0;
+          userInput.value = ''; message.value = ''; wordErrors.value = {}; showNamePrompt.value = false;
+          pendingHero.value = null; playerName.value = '';
+        };
+
+        const openLeaderboard = async () => {
+          gameState.value = 'LOADING';
+          try {
+            const boardData = await runServer('getLeaderboard');
+            leaderboardData.value = boardData;
+            if (Object.keys(boardData).length > 0) currentBoardTab.value = Object.keys(boardData)[0];
+            gameState.value = 'LEADERBOARD';
+          } catch(e) {
+            alert("英雄榜讀取失敗");
+            gameState.value = 'START';
+          }
+        };
+
+        const encounteredWordsList = computed(() => {
+          const len = gameState.value === 'VICTORY' ? gameWords.value.length : enemyIndex.value * 5 + wordIndex.value + 1;
+          return gameWords.value.slice(0, len);
+        });
+
+        const perfectCount = computed(() => {
+          return encounteredWordsList.value.filter(w => !wordErrors.value[w.w]).length;
+        });
+
+        return {
+          gameState, allVocab, difficulty, gameWords, selectedHero, enemyIndex, wordIndex, userInput,
+          totalErrors, wrongCountThisWord, wordErrors, message, isHitting, isSpeaking, formError,
+          showNamePrompt, playerName, timeElapsed, leaderboardData, currentBoardTab, maxErrors, ENEMY_MAX_HP,
+          IDS, heroNames, getImgUrl, formatTime, getDifficultyColor, initGameWords, handleHeroSelect,
+          confirmHero, currentEnemy, currentWordObj, getHint, speakWord, checkAnswer, resetGame, openLeaderboard,
+          encounteredWordsList, perfectCount
+        };
       }
-      if (wordsArray.length > 0) result[sheetName] = wordsArray;
-    });
-    return result; 
-  } catch (error) {
-    return {};
-  }
-}
-
-// 4. 儲存通關成績 (維持原樣)
-function saveScore(name, profession, difficulty, timeSeconds, errors) {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    let sheet = ss.getSheetByName('排行榜');
-    if (!sheet) {
-      sheet = ss.insertSheet('排行榜');
-      sheet.appendRow(['時間戳記', '玩家名稱', '職業', '挑戰難度', '通關時間(秒)', '失誤次數']);
-      sheet.getRange("A1:F1").setFontWeight("bold");
-    }
-    sheet.appendRow([new Date(), name, profession, difficulty, timeSeconds, errors]);
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-// 5. 讀取排行榜 (維持原樣)
-function getLeaderboard() {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName('排行榜');
-    if (!sheet) return {};
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return {};
-
-    const result = {};
-    for (let i = 1; i < data.length; i++) {
-      const [timestamp, name, profession, difficulty, time, errors] = data[i];
-      if (!result[difficulty]) result[difficulty] = [];
-      result[difficulty].push({ 
-        name: String(name), 
-        profession: String(profession), 
-        time: Number(time), 
-        errors: Number(errors),
-        date: new Date(timestamp).toLocaleDateString()
-      });
-    }
-
-    for (const diff in result) {
-      result[diff].sort((a, b) => {
-        if (a.time !== b.time) return a.time - b.time;
-        return a.errors - b.errors;
-      });
-      result[diff] = result[diff].slice(0, 10);
-    }
-    return result;
-  } catch (error) {
-    return {};
-  }
-}
+    }).mount('#app');
+  </script>
+</body>
+</html>
