@@ -238,8 +238,8 @@
   <script>
     const { createApp, ref, computed, watch } = Vue;
 
-    // 🚨 這裡填入你重新部署後的 Google Apps Script 「網頁應用程式」網址！
-    const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/xxxxxxxxx/exec'; 
+    // 🚨 這裡已經幫你自動換上最新的 Google 後端執行網址了！
+    const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwqwajn2tQaSFgU_4KuVKvfIBnPUAKDNB60nSNR9p4PkWBnmF_O79nJjQYXrvBly1xuKQ/exec'; 
 
     createApp({
       setup() {
@@ -289,7 +289,6 @@
 
         const getImgUrl = (id) => `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
 
-        // 核心修正：將原本的內部邏輯，轉換為向外部 GAS 發送標準網路請求 (API Fetch)
         const runServer = async (actionName, payload = null) => {
           try {
             let url = `${GAS_WEBAPP_URL}?action=${actionName}`;
@@ -299,15 +298,13 @@
               url = GAS_WEBAPP_URL;
               options = {
                 method: 'POST',
-                mode: 'no-cors', // 避免外部儲存跨域安全警告阻擋
+                mode: 'no-cors',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
               };
             }
 
             const response = await fetch(url, options);
-            
-            // saveScore 使用 no-cors 模式，無法讀取 response 內容，直接返回成功即可
             if (actionName === 'saveScore') return true; 
 
             const resData = await response.json();
@@ -454,7 +451,6 @@
           } else {
             clearInterval(timerInterval);
             gameState.value = 'VICTORY';
-            // 改為上傳成績到 API
             await runServer('saveScore', {
               name: selectedHero.value.name,
               profession: selectedHero.value.profession,
