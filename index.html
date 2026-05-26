@@ -1,15 +1,3 @@
-// 在 vocab-game 的 script 區塊最上方
-const urlParams = new URLSearchParams(window.location.search);
-const studentUid = urlParams.get('uid');
-const studentName = urlParams.get('name');
-const childIdx = urlParams.get('idx') || '0';
-
-if (studentName) {
-    // 可以在遊戲畫面上方顯示學生名字，讓他們知道這是連動挑戰
-    console.log(`目前挑戰學生: ${studentName}`);
-    // 範例：document.getElementById('user-welcome').innerText = `👋 哈囉 ${studentName}，準備好挑戰單字了嗎？`;
-}
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -20,6 +8,8 @@ if (studentName) {
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
   <style>
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
@@ -65,10 +55,14 @@ if (studentName) {
 
     <div v-if="gameState === 'START'" class="w-full h-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden text-center">
       <div class="relative z-10 space-y-6 my-auto max-w-2xl">
+        <p v-if="studentName" class="text-yellow-400 font-black text-sm bg-yellow-400/10 px-4 py-1.5 rounded-full border border-yellow-500/20 inline-block animate-bounce">
+          ⚡ 歡迎皓孩子勇者：{{ studentName }} 踏上單字征途！
+        </p>
+        
         <h1 class="text-4xl md:text-7xl lg:text-8xl font-black drop-shadow-2xl tracking-tight uppercase leading-tight">
-  皓晟徐薇英文<br>
-  <span class="text-red-600 block mt-2 text-5xl md:text-8xl">單字討伐</span>
-</h1>
+          皓晟徐薇英文<br>
+          <span class="text-red-600 block mt-2 text-5xl md:text-8xl">單字討伐</span>
+        </h1>
         <div class="h-1.5 w-48 bg-red-600 mx-auto rounded-full shadow-[0_0_20px_rgba(220,38,38,0.5)]"></div>
         <p class="text-slate-500 tracking-[0.8em] uppercase text-xs font-black">Vocab Crusader: The Ultimate Quest</p>
         <div class="py-8 flex flex-col items-center space-y-6">
@@ -283,6 +277,12 @@ if (studentName) {
 
     createApp({
       setup() {
+        // === 🚀 皓孩子中央銀行串接點數專用變數 ===
+        const urlParams = new URLSearchParams(window.location.search);
+        const studentUid = ref(urlParams.get('uid'));
+        const studentName = ref(urlParams.get('name'));
+        const childIdx = ref(urlParams.get('idx') || '0');
+
         const gameState = ref('LOADING');
         const allVocab = ref({});
         const difficulty = ref(null);
@@ -403,7 +403,8 @@ if (studentName) {
         const handleHeroSelect = (key, id) => {
           pendingHero.value = { key, id, professionName: heroNames[key] };
           showNamePrompt.value = true;
-          playerName.value = '';
+          // 💡 智慧連動優化：如果主系統已經傳名字過來，就自動帶入玩家名稱，不用學生自己打！
+          playerName.value = studentName.value ? studentName.value : '';
           formError.value = '';
         };
 
@@ -478,6 +479,42 @@ if (studentName) {
           }
         };
 
+        // === 🎁 皓孩子中央銀行：過關自動發放點數邏輯 ===
+        const processPointsPayout = () => {
+          // 檢查是不是由中央銀行主網頁連動過來的學生，如果是外人遊客就不處理
+          if (!studentUid.value) return;
+
+          // 以完美擊殺次數當作給點標準（答對題數就是20題滿分，減去有失誤的單字）
+          const finalScore = perfectCount.value * 10; 
+          // 換算預計發放的點數（答對1題給3點，最高 60 點，最低保障 10 點）
+          const rewardPoints = Math.max(perfectCount.value * 3, 10);
+
+          // 核心安全反作弊暗號（以 hago_點數_學生UID 進行 base64 加密，防學生竄改網址）
+          const securityCheck = btoa(`hago_${rewardPoints}_${studentUid.value}`);
+
+          // 打包建立返航主系統點生存摺的 URL
+          const backToPointsUrl = `https://weiiiik12.github.io/points/?completedGame=vocab&points=${rewardPoints}&idx=${childIdx.value}&auth=${securityCheck}`;
+
+          // 跳出神聖且驚豔的戰略結算寶箱
+          Swal.fire({
+            title: '🎉 討伐凱旋完成！',
+            html: `勇者 <b>${selectedHero.value.name}</b> 完美擊殺了 <b>${perfectCount.value}</b> 隻邪靈！<br>
+                   成功換取 <b>${rewardPoints}</b> 點數大獎！`,
+            icon: 'success',
+            iconColor: '#f1c40f',
+            background: '#1e293b',
+            color: '#fff',
+            confirmButtonText: '🚀 點我把點數匯回皓孩子網',
+            confirmButtonColor: '#ff9f43',
+            allowOutsideClick: false
+          }).then((result) => {
+            if (result.isConfirmed) {
+              // 帥氣返航主系統
+              window.location.href = backToPointsUrl;
+            }
+          });
+        };
+
         const nextQuestion = async () => {
           userInput.value = '';
           wrongCountThisWord.value = 0;
@@ -489,8 +526,11 @@ if (studentName) {
             wordIndex.value = 0;
             message.value = `✨ 已擊破敵將！`;
           } else {
+            // 進入這裡代表 4 隻 Boss 通通成功斬滅（20個單字全答對）
             clearInterval(timerInterval);
             gameState.value = 'VICTORY';
+            
+            // 先發送原本的排行榜 GAS 資料
             await runServer('saveScore', {
               name: selectedHero.value.name,
               profession: selectedHero.value.profession,
@@ -498,6 +538,11 @@ if (studentName) {
               timeSeconds: timeElapsed.value,
               errors: totalErrors.value
             });
+
+            // 隨後啟動點數匯回中央銀行的神聖儀式！
+            setTimeout(() => {
+              processPointsPayout();
+            }, 800);
           }
         };
 
@@ -536,41 +581,10 @@ if (studentName) {
           showNamePrompt, playerName, timeElapsed, leaderboardData, currentBoardTab, maxErrors, ENEMY_MAX_HP,
           IDS, heroNames, getImgUrl, formatTime, getDifficultyColor, initGameWords, handleHeroSelect,
           confirmHero, currentEnemy, currentWordObj, getHint, speakWord, checkAnswer, resetGame, openLeaderboard,
-          encounteredWordsList, perfectCount
+          encounteredWordsList, perfectCount, studentName
         };
       }
     }).mount('#app');
   </script>
 </body>
 </html>
-
-
-// 這是你單字遊戲結束、GAS 處理完畢後的邏輯位置
-function onGameFinishedAndGasSaved(finalScore) {
-    // 檢查是不是從主系統過來的學生，如果是一般遊客就不做動作
-    if (!studentUid) return;
-
-    // 計算預計發放的點數（例如得分的 10%，或固定給 50 點）
-    const rewardPoints = Math.floor(finalScore * 0.1) || 10; 
-
-    // 計算出一個專屬的驗證暗號（可以用點數加上固定字串，防止學生作弊自己改網址）
-    const securityCheck = btoa(`hago_${rewardPoints}_${studentUid}`); 
-
-    // 建立回傳主系統點數網頁的網址
-    const backToPointsUrl = `https://weiiiik12.github.io/points/?completedGame=vocab&points=${rewardPoints}&idx=${childIdx}&auth=${securityCheck}`;
-
-    // 使用 SweetAlert 或你原本的彈出視窗提示學生點擊回傳
-    Swal.fire({
-        title: '🎉 挑戰完成！',
-        html: `你在單字遊戲獲得了 <b>${finalScore}</b> 分！<br>可以換取 <b>${rewardPoints}</b> 點數喔！`,
-        icon: 'success',
-        confirmButtonText: '🚀 點我把點數匯回皓孩子網',
-        confirmButtonColor: '#ff9f43',
-        allowOutsideClick: false
-    }).then((result) => {
-        if (result.isConfirmed) {
-            // 直接將當前頁面導回主系統，進行點數結算
-            window.location.href = backToPointsUrl;
-        }
-    });
-}
