@@ -1,3 +1,15 @@
+// 在 vocab-game 的 script 區塊最上方
+const urlParams = new URLSearchParams(window.location.search);
+const studentUid = urlParams.get('uid');
+const studentName = urlParams.get('name');
+const childIdx = urlParams.get('idx') || '0';
+
+if (studentName) {
+    // 可以在遊戲畫面上方顯示學生名字，讓他們知道這是連動挑戰
+    console.log(`目前挑戰學生: ${studentName}`);
+    // 範例：document.getElementById('user-welcome').innerText = `👋 哈囉 ${studentName}，準備好挑戰單字了嗎？`;
+}
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -531,3 +543,34 @@
   </script>
 </body>
 </html>
+
+
+// 這是你單字遊戲結束、GAS 處理完畢後的邏輯位置
+function onGameFinishedAndGasSaved(finalScore) {
+    // 檢查是不是從主系統過來的學生，如果是一般遊客就不做動作
+    if (!studentUid) return;
+
+    // 計算預計發放的點數（例如得分的 10%，或固定給 50 點）
+    const rewardPoints = Math.floor(finalScore * 0.1) || 10; 
+
+    // 計算出一個專屬的驗證暗號（可以用點數加上固定字串，防止學生作弊自己改網址）
+    const securityCheck = btoa(`hago_${rewardPoints}_${studentUid}`); 
+
+    // 建立回傳主系統點數網頁的網址
+    const backToPointsUrl = `https://weiiiik12.github.io/points/?completedGame=vocab&points=${rewardPoints}&idx=${childIdx}&auth=${securityCheck}`;
+
+    // 使用 SweetAlert 或你原本的彈出視窗提示學生點擊回傳
+    Swal.fire({
+        title: '🎉 挑戰完成！',
+        html: `你在單字遊戲獲得了 <b>${finalScore}</b> 分！<br>可以換取 <b>${rewardPoints}</b> 點數喔！`,
+        icon: 'success',
+        confirmButtonText: '🚀 點我把點數匯回皓孩子網',
+        confirmButtonColor: '#ff9f43',
+        allowOutsideClick: false
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // 直接將當前頁面導回主系統，進行點數結算
+            window.location.href = backToPointsUrl;
+        }
+    });
+}
